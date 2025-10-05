@@ -1,0 +1,26 @@
+{
+  "name": "Motor",
+  "version": "1.0.0",
+  "description": "Simple single-direction motor driver using ESP32 LEDC PWM, with deadzone floor.",
+  "keywords": [
+    "motor",
+    "pwm",
+    "esp32",
+    "ledc"
+  ],
+  "authors": [
+    {
+      "name": "Thomas",
+      "email": "thomas.metais@eleves.ec-nantes.fr"
+    }
+  ],
+  "platforms": [
+    "espressif32"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "build": {
+    "includeDir": "src"
+  }
+}

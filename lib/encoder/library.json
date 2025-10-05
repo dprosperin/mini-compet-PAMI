@@ -1,0 +1,25 @@
+{
+  "name": "Encoder",
+  "version": "1.0.0",
+  "description": "Quadrature encoder for ESP32 (ISR IRAM-safe, counting+period fusion).",
+  "keywords": [
+    "encoder",
+    "quadrature",
+    "esp32"
+  ],
+  "authors": [
+    {
+      "name": "Thomas",
+      "email": "thomas.metais@eleves.ec-nantes.fr"
+    }
+  ],
+  "platforms": [
+    "espressif32"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "build": {
+    "includeDir": "src"
+  }
+}

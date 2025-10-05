@@ -1,0 +1,26 @@
+{
+  "name": "PID",
+  "version": "1.0.0",
+  "description": "Fixed-timestep PID with derivative filter and optional feed-forward.",
+  "keywords": [
+    "pid",
+    "control",
+    "esp32",
+    "arduino"
+  ],
+  "authors": [
+    {
+      "name": "Thomas",
+      "email": "thomas.metais@eleves.ec-nantes.fr"
+    }
+  ],
+  "platforms": [
+    "espressif32"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "build": {
+    "includeDir": "src"
+  }
+}
