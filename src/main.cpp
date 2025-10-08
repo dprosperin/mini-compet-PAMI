@@ -1,48 +1,83 @@
 #include <Arduino.h>
-#include <Wire.h>
-#include <Adafruit_PWMServoDriver.h>
+const int SERVO_PIN  = 4;
+const int SERVO_FREQ = 50;     // 50 Hz
+const int SERVO_RES  = 16;     // 16 bits
+const int SERVO_CH   = 0;
 
-Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
+// --- Pour servo positionnel ---
+int SERVO_MIN_US = 1000;       // impulsion à ~0°
+int SERVO_MAX_US = 2000;       // impulsion à ~180°
+float ANGLE_MIN  = 0.0f;
+float ANGLE_MAX  = 180.0f;
 
-// Paramètres servo (ajuste si ton servo sature ou claque)
-const uint8_t SERVO_CH = 11;         // ton canal
-const float   SERVO_MIN_US = 500;    // µs à 0°
-const float   SERVO_MAX_US = 2500;   // µs à 180°
-const float   SERVO_FREQ   = 50.0;   // Hz (servos = 50–60 Hz)
-
-uint16_t usToTicks(float us) {
-  // PCA9685 = 12 bits (4096 pas) sur une période = 1/freq
-  // ticks = us / (1e6 / (4096 * freq))
-  const float tick_us = 1000000.0f / (4096.0f * SERVO_FREQ);
-  return (uint16_t)roundf(us / tick_us);
+// ====== UTILS ======
+uint32_t usToDuty(int us){
+  const uint32_t maxDuty = (1u << SERVO_RES) - 1u;
+  return (uint32_t)(( (float)us / 20000.0f ) * maxDuty); // période 20 ms
 }
 
-void writeServoAngle(uint8_t ch, float angle_deg) {
-  angle_deg = constrain(angle_deg, 0.0f, 180.0f);
-  float pulse_us = SERVO_MIN_US +
-                   (SERVO_MAX_US - SERVO_MIN_US) * (angle_deg / 180.0f);
-  uint16_t off = usToTicks(pulse_us);
-  pwm.setPWM(ch, 0, off);
+void writeServoUs(int us){
+  us = constrain(us, 1000, 2000);
+  ledcWrite(SERVO_CH, usToDuty(us));
 }
 
-void setup() {
-  Wire.begin();
-  pwm.begin();
-  pwm.setPWMFreq(SERVO_FREQ);
-  delay(10);
-
-  // Place le servo à 90° au démarrage
-  writeServoAngle(SERVO_CH, 65);
+// ====== MODE POSITION (servo à palonnier 0–180°) ======
+int angleToUs(float angle){
+  angle = constrain(angle, ANGLE_MIN, ANGLE_MAX);
+  float k = (angle - ANGLE_MIN) / (ANGLE_MAX - ANGLE_MIN);
+  return (int)round(SERVO_MIN_US + k * (SERVO_MAX_US - SERVO_MIN_US));
 }
 
-void loop() {
-  // Exemple: balayage 0° -> 180° -> 0°
-  for (int a = 65; a <= 135; a += 5) {
-    writeServoAngle(SERVO_CH, a);
-    delay(20);
+void writeServoAngle(float angle_deg){
+  writeServoUs(angleToUs(angle_deg));
+}
+
+// Déplacement fluide vers une position en un temps donné (ms)
+void moveToAngle(float target_deg, uint16_t duration_ms = 800){
+  target_deg = constrain(target_deg, ANGLE_MIN, ANGLE_MAX);
+  // on lit "virtuellement" la position courante via le dernier PWM (pas de retour réel)
+  // on suppose la position courante proche de ce qu'on a demandé en dernier
+  static float current_deg = 90.0f;
+  const uint16_t steps = 40;             // + de steps = plus fluide
+  const float step_deg = (target_deg - current_deg) / steps;
+  const uint16_t step_ms = duration_ms / steps;
+
+  for(uint16_t i=0;i<steps;i++){
+    current_deg += step_deg;
+    writeServoAngle(current_deg);
+    delay(step_ms);
   }
-  for (int a = 135; a >= 65; a -= 5) {
-    writeServoAngle(SERVO_CH, a);
-    delay(20);
-  }
+  writeServoAngle(target_deg);
+  current_deg = target_deg;
+}
+
+// **Nouvelles** fonctions "en position"
+void range_pos(){               // analogue de range() mais en ANGLE
+  // exemple : autour de 90°, ±20°
+  moveToAngle(110, 500);
+  delay(300);
+  moveToAngle(90,  400);
+  delay(300);
+  moveToAngle(70,  500);
+  delay(300);
+  moveToAngle(90,  400);
+  delay(300);
+}
+
+void whole_range_pos(){         // analogue de whole_range() mais 0–180°
+  moveToAngle(0,    800);  delay(400);
+  moveToAngle(90,   800);  delay(400);
+  moveToAngle(180,  800);  delay(400);
+  moveToAngle(90,   800);  delay(400);
+}
+
+// ====== SETUP/LOOP ======
+void setup(){
+  ledcSetup(SERVO_CH, SERVO_FREQ, SERVO_RES);
+  ledcAttachPin(SERVO_PIN, SERVO_CH);
+  writeServoAngle(90.0f); // position médiane
+}
+
+void loop(){
+  range_pos();            
 }
