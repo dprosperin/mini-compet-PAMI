@@ -1,24 +1,22 @@
 #include "encoder.h"
 
-/* Table quadrature : transitions valides à +1 et -1 */
+/* Diff de quadrature compacte : (old<<2)|new -> +1 / -1 / 0 */
 int8_t Encoder::quadDiff(uint8_t packed) noexcept
 {
   switch (packed)
   {
-  // +1
   case 0b0001:
   case 0b0111:
   case 0b1110:
   case 0b1000:
     return +1;
-  // -1
   case 0b0010:
   case 0b1011:
   case 0b1101:
   case 0b0100:
     return -1;
   default:
-    return 0; // rebond / saut
+    return 0; // rebond/saut
   }
 }
 
@@ -32,9 +30,9 @@ Encoder::Encoder(uint8_t pinA, uint8_t pinB, uint16_t ticksPerRev) noexcept
 
 void Encoder::begin() noexcept
 {
-  pinMode(_pinA, INPUT_PULLUP);
-  pinMode(_pinB, INPUT_PULLUP);
-
+  // Entrées pures : surtout pas OUTPUT sur 34/35 ; pas de pullup interne.
+  pinMode(_pinA, INPUT);
+  pinMode(_pinB, INPUT);
   _lastAB = readAB();
   _ticks = 0;
   _prevTicks = 0;
@@ -47,7 +45,7 @@ void IRAM_ATTR Encoder::handleISR() noexcept
   const uint8_t ab = readAB();
   const int8_t d = quadDiff((uint8_t)((_lastAB << 2) | ab));
   _lastAB = ab;
-  if (d != 0)
+  if (d)
     _ticks += d;
 }
 
@@ -66,7 +64,7 @@ void Encoder::update() noexcept
   const long dTicks = snap - _prevTicks;
   const float dt = (float)dtMs * 0.001f;
 
-  _tps = (dTicks * _invTPR) / dt;
+  _tps = (dTicks * _invTPR) / dt; // tours/s roue
 
   _prevTicks = snap;
   _prevMs = now;
@@ -78,7 +76,6 @@ void Encoder::reset() noexcept
   _ticks = 0;
   _lastAB = readAB();
   interrupts();
-
   _prevTicks = 0;
   _tps = 0.0f;
   _prevMs = millis();
@@ -86,7 +83,7 @@ void Encoder::reset() noexcept
 
 void Encoder::setTicksPerRev(uint16_t tpr) noexcept
 {
-  if (tpr == 0)
+  if (!tpr)
     return;
   _tpr = tpr;
   _invTPR = 1.0f / (float)_tpr;
@@ -94,5 +91,5 @@ void Encoder::setTicksPerRev(uint16_t tpr) noexcept
 
 void Encoder::setUpdatePeriodMs(uint32_t ms) noexcept
 {
-  _updatePeriodMs = (ms == 0) ? 1u : ms;
+  _updatePeriodMs = ms == 0 ? 1u : ms;
 }

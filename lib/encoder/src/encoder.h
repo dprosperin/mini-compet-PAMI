@@ -1,74 +1,51 @@
-/**
- * @file encoder.h
- * @brief Encodeur quadrature simple (ESP32/Arduino) basé sur le comptage de ticks.
- *
- * Principe :
- *  - Deux interruptions CHANGE (A et B) appellent handleISR().
- *  - À chaque front, on relit A et B, on compare à l’état précédent, on ajoute +1/-1/0.
- *  - La vitesse (TPS) est estimée dans update() sur une fenêtre temporelle (Δticks / Δt / TPR).
- *
- * Lisible d’abord. Suffisant pour la plupart des N20 + réducteur.
- */
-
 #pragma once
 #include <Arduino.h>
 
+/**
+ * Encodeur quadrature (ESP32) — comptage + estimation TPS (tours/s roue).
+ * A/B : entrées uniquement (ex: GPIO34/35). Pas de pullups internes ici.
+ * Fenêtre d'estimation : Δticks / Δt / TPR.
+ */
 class Encoder
 {
 public:
   Encoder(uint8_t pinA, uint8_t pinB, uint16_t ticksPerRev = 48) noexcept;
 
-  /// À appeler dans setup() avant attachInterrupt().
-  void begin() noexcept;
-
-  /// ISR à attacher sur A ET sur B (CHANGE).
-  void IRAM_ATTR handleISR() noexcept;
-
-  /// Calcule la vitesse moyenne sur la fenêtre écoulée.
-  /// Appeler à cadence régulière (ex: toutes les 10 ms).
-  void update() noexcept;
-
-  /// Réinitialise compteurs et mesure.
+  void begin() noexcept;               // à appeler dans setup()
+  void IRAM_ATTR handleISR() noexcept; // ISR unique pour A et B (CHANGE)
+  void update() noexcept;              // calcule _tps si période écoulée
   void reset() noexcept;
 
-  /// Accesseurs
-  inline long ticks() const noexcept { return _ticks; } // compteur brut (signé)
-  inline float tps() const noexcept { return _tps; }    // tours/s estimés
-  inline uint16_t tpr() const noexcept { return _tpr; } // ticks par tour
+  // lecture
+  inline long ticks() const noexcept { return _ticks; } // signé
+  inline float tps() const noexcept { return _tps; }    // tours/s (roue)
+  inline uint16_t tpr() const noexcept { return _tpr; } // ticks / tour (roue)
 
-  /// Réglages
+  // réglages
   void setTicksPerRev(uint16_t tpr) noexcept;
-  void setUpdatePeriodMs(uint32_t ms) noexcept; // par défaut 10 ms
+  void setUpdatePeriodMs(uint32_t ms) noexcept;
 
 private:
-  // GPIO
-  const uint8_t _pinA;
-  const uint8_t _pinB;
+  const uint8_t _pinA, _pinB;
 
-  // Quadrature
-  volatile long _ticks = 0;     // compteur de ticks
+  volatile long _ticks = 0;
   volatile uint8_t _lastAB = 0; // (A<<1)|B dernier
 
-  // Cinématique
-  uint16_t _tpr = 48; // ticks par tour
+  uint16_t _tpr = 48; // ticks par tour de roue (à calibrer)
   float _invTPR = 1.0f / 48.0f;
 
-  // Fenêtre counting
   uint32_t _prevMs = 0;
   long _prevTicks = 0;
-  uint32_t _updatePeriodMs = 10; // période d’update recommandée (ms)
+  uint32_t _updatePeriodMs = 10;
 
-  // Sortie
   float _tps = 0.0f;
 
-  // Lecture instantanée
   inline uint8_t readAB() const noexcept
   {
+    // Pins input-only (34/35) OK | pas de pull-ups internes
     const uint8_t a = digitalRead(_pinA);
     const uint8_t b = digitalRead(_pinB);
     return (uint8_t)((a << 1) | b);
   }
-
-  // Diff quadrature compacte : (old<<2)|new -> +1 / -1 / 0
   static inline int8_t quadDiff(uint8_t packed) noexcept;
 };
