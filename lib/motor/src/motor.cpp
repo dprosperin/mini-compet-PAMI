@@ -40,7 +40,7 @@ void Motor::setPercent(float percent) noexcept
     return;
   }
 
-  // Plancher simple : force un minimum pour “lancer” le moteur
+  // Plancher pour vaincre les frottements
   const float eff = _minPct + (100.0f - _minPct) * (percent * 0.01f);
   const uint32_t d = (uint32_t)(eff * _maxDuty * 0.01f + 0.5f);
   setDuty(d);
