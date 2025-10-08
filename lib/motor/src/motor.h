@@ -9,8 +9,6 @@
  */
 
 #pragma once
-#ifndef MOTOR_H
-#define MOTOR_H
 
 #include <Arduino.h>
 
@@ -87,5 +85,3 @@ private:
 
   float _minPct = 8.0f; ///< Plancher pour décoller (en %).
 };
-
-#endif

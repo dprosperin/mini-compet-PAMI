@@ -9,8 +9,6 @@
  */
 
 #pragma once
-#ifndef PID_H
-#define PID_H
 
 #include <Arduino.h>
 
@@ -81,5 +79,3 @@ private:
   float _ePrev = 0.0f; ///< Erreur précédente.
   uint32_t _tPrev = 0; ///< Timestamp (ms).
 };
-
-#endif

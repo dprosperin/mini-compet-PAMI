@@ -14,8 +14,6 @@
  */
 
 #pragma once
-#ifndef ENCODER_H
-#define ENCODER_H
 
 #include <Arduino.h>
 
@@ -157,5 +155,3 @@ private:
     return (uint8_t)((a << 1) | b);
   }
 };
-
-#endif
