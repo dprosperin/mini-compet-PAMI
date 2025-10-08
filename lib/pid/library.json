@@ -1,12 +1,13 @@
 {
   "name": "PID",
-  "version": "1.0.0",
-  "description": "Fixed-timestep PID with derivative filter and optional feed-forward.",
+  "version": "2.0.0",
+  "description": "Minimal PID (P+I+D), millis()-based dt, saturation + simple anti-windup.",
   "keywords": [
     "pid",
     "control",
     "esp32",
-    "arduino"
+    "arduino",
+    "anti-windup"
   ],
   "authors": [
     {

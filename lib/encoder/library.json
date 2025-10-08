@@ -1,11 +1,13 @@
 {
   "name": "Encoder",
-  "version": "1.0.0",
-  "description": "Quadrature encoder for ESP32 (ISR IRAM-safe, counting+period fusion).",
+  "version": "2.0.0",
+  "description": "Readable quadrature encoder for ESP32/Arduino, counting-based speed (Δticks/Δt).",
   "keywords": [
     "encoder",
     "quadrature",
-    "esp32"
+    "esp32",
+    "arduino",
+    "counting"
   ],
   "authors": [
     {

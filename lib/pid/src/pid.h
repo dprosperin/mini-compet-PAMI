@@ -1,81 +1,34 @@
 /**
  * @file pid.h
- * @brief PID minimal avec anti-windup simple (conditional integration).
+ * @brief PID minimal lisible, avec anti-windup par dé-intégration en saturation.
  *
- * @details
- * - @c compute() calcule @c dt via @c millis() (pas de cadence interne dédiée).
- * - Anti-windup : si saturation et erreur pousse dans le même sens -> dé-intègre.
- * - Pas de filtre D ni de feed-forward (volontairement compact).
+ * compute() calcule dt via millis(), applique saturation, met à jour *_out.
  */
 
 #pragma once
-
 #include <Arduino.h>
 
-/**
- * @class PID
- * @brief Contrôleur PID minimaliste (float).
- *
- * @code
- * PID pid(0.9f, 6.0f, 0.0f, 0.0f, 100.0f);
- * pid.setIO(&sp, &meas, &out);
- * pid.setOutputLimits(0.0f, 100.0f);
- * pid.reset();
- * // boucle:
- * float u = pid.compute(); // écrit aussi *out
- * @endcode
- */
 class PID
 {
 public:
-  /**
-   * @brief Constructeur.
-   * @param kp Kp.
-   * @param ki Ki.
-   * @param kd Kd.
-   * @param outMin Limite min de sortie.
-   * @param outMax Limite max de sortie.
-   */
   PID(float kp, float ki, float kd, float outMin = 0.0f, float outMax = 100.0f) noexcept;
 
-  /**
-   * @brief Lie les pointeurs I/O (consigne, mesure, sortie).
-   * @param setpoint Pointeur consigne.
-   * @param input Pointeur mesure.
-   * @param output Pointeur sortie (écrite par @c compute()).
-   */
   void setIO(const float *setpoint, const float *input, float *output) noexcept;
-
-  /**
-   * @brief Met à jour les gains.
-   */
   void setTunings(float kp, float ki, float kd) noexcept;
-
-  /**
-   * @brief Fixe les bornes de sortie et sature immédiatement la sortie si besoin.
-   */
   void setOutputLimits(float min, float max) noexcept;
-
-  /**
-   * @brief Remise à zéro : intégrateur, erreur, timestamp, sortie=min.
-   */
   void reset() noexcept;
 
-  /**
-   * @brief Calcule la sortie PID, applique saturation et anti-windup.
-   * @return Valeur de sortie écrite (@c *_out).
-   */
-  float compute() noexcept;
+  float compute() noexcept; // renvoie la sortie (et écrit *_out)
 
 private:
-  const float *_sp = nullptr; ///< Consigne.
-  const float *_in = nullptr; ///< Mesure.
-  float *_out = nullptr;      ///< Sortie.
+  const float *_sp = nullptr;
+  const float *_in = nullptr;
+  float *_out = nullptr;
 
-  float _kp, _ki, _kd; ///< Gains.
-  float _omin, _omax;  ///< Bornes de sortie.
+  float _kp, _ki, _kd;
+  float _omin, _omax;
 
-  float _i = 0.0f;     ///< Terme intégral.
-  float _ePrev = 0.0f; ///< Erreur précédente.
-  uint32_t _tPrev = 0; ///< Timestamp (ms).
+  float _i = 0.0f;     // intégrale
+  float _ePrev = 0.0f; // erreur précédente
+  uint32_t _tPrev = 0; // timestamp (ms)
 };

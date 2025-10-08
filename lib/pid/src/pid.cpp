@@ -1,14 +1,7 @@
-/**
- * @file pid.cpp
- * @brief Implémentation du PID minimal.
- */
-
 #include "pid.h"
 
 PID::PID(float kp, float ki, float kd, float outMin, float outMax) noexcept
-    : _kp(kp), _ki(ki), _kd(kd), _omin(outMin), _omax(outMax)
-{
-}
+    : _kp(kp), _ki(ki), _kd(kd), _omin(outMin), _omax(outMax) {}
 
 void PID::setIO(const float *setpoint, const float *input, float *output) noexcept
 {
@@ -62,28 +55,25 @@ float PID::compute() noexcept
   }
   _tPrev = now;
 
-  const float sp = *_sp;
-  const float y = *_in;
-  const float e = sp - y;
+  const float e = (*_sp) - (*_in);
 
-  // PID nu
+  // PID “nu”
   _i += e * dt;
   const float d = (e - _ePrev) / dt;
 
-  float u = _kp * e + _ki * _i + _kd * d;
+  const float u = _kp * e + _ki * _i + _kd * d;
 
-  // Saturation
+  // Saturation + anti-windup simple
   float out = u;
   if (out > _omax)
     out = _omax;
   if (out < _omin)
     out = _omin;
 
-  // Anti-windup: si saturé et erreur pousse plus dans la saturation -> dé-intègre
   const bool satHigh = (u > _omax);
   const bool satLow = (u < _omin);
   if ((satHigh && e > 0.0f) || (satLow && e < 0.0f))
-    _i -= e * dt;
+    _i -= e * dt; // désintégration si ça pousse dans la saturation
 
   _ePrev = e;
   *_out = out;

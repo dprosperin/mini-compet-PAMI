@@ -1,14 +1,7 @@
-/**
- * @file motor.cpp
- * @brief Implémentation du wrapper LEDC moteur DC.
- */
-
 #include "motor.h"
 
 Motor::Motor(uint8_t pin, uint8_t channel, uint32_t pwmHz, uint8_t resBits) noexcept
-    : _pin(pin), _ch(channel), _hz(pwmHz), _res(resBits)
-{
-}
+    : _pin(pin), _ch(channel), _hz(pwmHz), _res(resBits) {}
 
 void Motor::begin() noexcept
 {
@@ -23,8 +16,7 @@ void Motor::begin() noexcept
 
   ledcSetup(_ch, _hz, _res);
   ledcAttachPin(_pin, _ch);
-  ledcWrite(_ch, 0);
-  _duty = 0;
+  setDuty(0);
 }
 
 void Motor::setDuty(uint32_t duty) noexcept
@@ -48,9 +40,9 @@ void Motor::setPercent(float percent) noexcept
     return;
   }
 
-  // Plancher (ex: 8%) pour dépasser les frottements
+  // Plancher simple : force un minimum pour “lancer” le moteur
   const float eff = _minPct + (100.0f - _minPct) * (percent * 0.01f);
-  const uint32_t d = (uint32_t)((eff * _maxDuty * 0.01f) + 0.5f);
+  const uint32_t d = (uint32_t)(eff * _maxDuty * 0.01f + 0.5f);
   setDuty(d);
 }
 
