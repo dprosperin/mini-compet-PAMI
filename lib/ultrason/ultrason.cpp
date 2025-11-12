@@ -1,5 +1,16 @@
 #include "ultrason.hpp"
-#include <Arduino.h>
+
+QueueHandle_t qh = 0;
+
+void ultrasonTask(void *arg)
+{
+  for (;;)
+  {
+    float distance = getDistanceUltrason();
+    xQueueSendToBack(qh, &distance, portMAX_DELAY);
+    vTaskDelay(100 / portTICK_PERIOD_MS);  // 100ms
+  }
+}
 
 void setPinsTrigEcho()
 {
