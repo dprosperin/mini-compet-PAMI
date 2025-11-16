@@ -1,95 +1,93 @@
 #include "encoder.h"
 
-/* Diff de quadrature compacte : (old<<2)|new -> +1 / -1 / 0 */
-int8_t Encoder::quadDiff(uint8_t packed) noexcept
+Encoder::Encoder(uint8_t pinA, uint8_t pinB,
+                 uint16_t ticksPerRev)
+    : _pinA(pinA),
+      _pinB(pinB),
+      _tpr(ticksPerRev ? ticksPerRev : 1),
+      _ticks(0),
+      _prevUpdateMs(0),
+      _prevTicks(0),
+      _periodMs(20), // par défaut : 20 ms (50 Hz)
+      _rps(0.0f)
 {
-  switch (packed)
+}
+
+void Encoder::begin()
+{
+  pinMode(_pinA, INPUT_PULLUP);
+  pinMode(_pinB, INPUT_PULLUP);
+
+  // Lecture initiale, juste pour "réveiller" les entrées
+  uint8_t a, b;
+  readAB(a, b);
+
+  noInterrupts();
+  _ticks = 0;
+  interrupts();
+
+  _prevUpdateMs = millis();
+  _prevTicks = 0;
+  _rps = 0.0f;
+}
+
+void Encoder::setUpdatePeriodMs(uint32_t periodMs)
+{
+  if (periodMs == 0)
+    periodMs = 1;
+  _periodMs = periodMs;
+}
+
+void IRAM_ATTR Encoder::handleISR()
+{
+  // Interruption sur A, on lit A et B pour déterminer le sens
+  uint8_t a, b;
+  readAB(a, b);
+
+  // Quadrature simple : si A == B -> +1, sinon -1
+  // Le sens "avant" doit être garanti par le câblage physique.
+  int8_t delta = (a == b) ? +1 : -1;
+
+  _ticks += delta;
+}
+
+void Encoder::update()
+{
+  uint32_t now = millis();
+  uint32_t dtMs = now - _prevUpdateMs;
+
+  // On ne recalcule la vitesse que si la période cible est atteinte
+  if (dtMs < _periodMs)
+    return;
+
+  long ticks;
+  noInterrupts();
+  ticks = _ticks;
+  interrupts();
+
+  long dTicks = ticks - _prevTicks;
+  _prevTicks = ticks;
+  _prevUpdateMs = now;
+
+  if (dtMs == 0 || _tpr == 0)
   {
-  case 0b0001:
-  case 0b0111:
-  case 0b1110:
-  case 0b1000:
-    return +1;
-  case 0b0010:
-  case 0b1011:
-  case 0b1101:
-  case 0b0100:
-    return -1;
-  default:
-    return 0; // rebond/saut
+    _rps = 0.0f;
+    return;
   }
+
+  // Conversion en tours/s : dTicks / TPR / (dt en seconde)
+  float dt = dtMs * 0.001f;
+  float instRps = (float)dTicks / (float)_tpr / dt;
+
+  // Pas de filtrage : on garde la valeur instantanée
+  _rps = instRps;
 }
 
-Encoder::Encoder(uint8_t pinA, uint8_t pinB, uint16_t ticksPerRev) noexcept
-    : _pinA(pinA), _pinB(pinB), _tpr(ticksPerRev)
-{
-  if (_tpr == 0)
-    _tpr = 1;
-  _invTPR = 1.0f / (float)_tpr;
-}
-
-void Encoder::begin() noexcept
-{
-  // Entrées pures : surtout pas OUTPUT sur 34/35 ; pas de pullup interne.
-  pinMode(_pinA, INPUT);
-  pinMode(_pinB, INPUT);
-  _lastAB = readAB();
-  _ticks = 0;
-  _prevTicks = 0;
-  _prevMs = millis();
-  _tps = 0.0f;
-}
-
-void IRAM_ATTR Encoder::handleISR() noexcept
-{
-  const uint8_t ab = readAB();
-  const int8_t d = quadDiff((uint8_t)((_lastAB << 2) | ab));
-  _lastAB = ab;
-  if (d)
-    _ticks += d;
-}
-
-void Encoder::update() noexcept
-{
-  const uint32_t now = millis();
-  const uint32_t dtMs = now - _prevMs;
-  if (dtMs < _updatePeriodMs)
-    return;
-
-  long snap;
-  noInterrupts();
-  snap = _ticks;
-  interrupts();
-
-  const long dTicks = snap - _prevTicks;
-  const float dt = (float)dtMs * 0.001f;
-
-  _tps = (dTicks * _invTPR) / dt; // tours/s roue
-
-  _prevTicks = snap;
-  _prevMs = now;
-}
-
-void Encoder::reset() noexcept
+void Encoder::resetTicks()
 {
   noInterrupts();
   _ticks = 0;
-  _lastAB = readAB();
   interrupts();
+
   _prevTicks = 0;
-  _tps = 0.0f;
-  _prevMs = millis();
-}
-
-void Encoder::setTicksPerRev(uint16_t tpr) noexcept
-{
-  if (!tpr)
-    return;
-  _tpr = tpr;
-  _invTPR = 1.0f / (float)_tpr;
-}
-
-void Encoder::setUpdatePeriodMs(uint32_t ms) noexcept
-{
-  _updatePeriodMs = ms == 0 ? 1u : ms;
 }

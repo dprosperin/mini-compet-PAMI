@@ -1,7 +1,7 @@
 {
   "name": "Motor",
-  "version": "2.1.0",
-  "description": "Simple LEDC PWM motor driver for ESP32 with deadzone floor (min %).",
+  "version": "1.0.0",
+  "description": "Simple LEDC PWM motor driver (DRV8833) for ESP32/Arduino",
   "keywords": [
     "motor",
     "pwm",

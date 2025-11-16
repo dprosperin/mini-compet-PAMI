@@ -1,27 +1,23 @@
 {
-  "name": "PID",
-  "version": "2.0.0",
-  "description": "Minimal PID (P+I+D), millis()-based dt, saturation + simple anti-windup.",
+  "name": "PIDController",
+  "version": "0.0.1",
+  "description": "A library that implements PID control to your code.",
   "keywords": [
     "pid",
     "control",
-    "esp32",
-    "arduino",
-    "anti-windup"
+    "device"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DonnyCraft1/PIDArduino"
+  },
+  "homepage": "https://github.com/DonnyCraft1/PIDArduino",
   "authors": [
     {
-      "name": "Thomas",
-      "email": "thomas.metais@eleves.ec-nantes.fr"
+      "name": "Daniel",
+      "maintainer": true
     }
   ],
-  "platforms": [
-    "espressif32"
-  ],
-  "frameworks": [
-    "arduino"
-  ],
-  "build": {
-    "includeDir": "src"
-  }
+  "frameworks": "arduino",
+  "platforms": "*"
 }

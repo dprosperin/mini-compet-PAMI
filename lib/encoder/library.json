@@ -1,7 +1,7 @@
 {
   "name": "Encoder",
-  "version": "2.1.0",
-  "description": "Readable quadrature encoder for ESP32/Arduino, counting-based speed (Δticks/Δt).",
+  "version": "1.0.0",
+  "description": "Readable quadrature encoder for ESP32/Arduino",
   "keywords": [
     "encoder",
     "quadrature",

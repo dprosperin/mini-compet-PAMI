@@ -1,131 +1,279 @@
 #include <Arduino.h>
-#include "motor.h"
+#include <PIDController.h> // Lib PID utilisée dans le tuto CircuitDigest
 #include "encoder.h"
-#include <QuickPID.h>
+#include "motor.h"
 
-/* =======================================================================
-   BLOC 1 — CÂBLAGE
-   - Ultrasons occupent GPIO5 et GPIO18  -> évités ici.
-   - D34/D35 = entrées uniquement        -> parfaits pour l’encodeur.
-   ======================================================================= */
-constexpr uint8_t PIN_PWM = 25;   // PWM moteur (LEDC)
-constexpr uint8_t PIN_ENC_A = 34; // Encodeur A (input-only)
-constexpr uint8_t PIN_ENC_B = 35; // Encodeur B (input-only)
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
 
-/* =======================================================================
-   BLOC 2 — PARAM MATÉRIEL
-   ======================================================================= */
-constexpr uint8_t LEDC_CH = 0;
-constexpr uint32_t LEDC_HZ = 20000; // 20 kHz -> silencieux
-constexpr uint8_t LEDC_RES = 8;
+/* ===================== PINS DRV8833 / ENCODEURS ===================== */
 
-/* TPR = ticks par tour DE ROUE (pas du moteur).
- * Mesure rapide : 1 tour de roue EXACT -> lire Δticks -> reporter ici.
- */
-constexpr uint16_t WHEEL_TPR = 48; // À CALIBRER selon ton réducteur // 4224 44×96 (ou 48×88)
+// DRV8833 - Moteur A
+const uint8_t MOT_A1_PIN = 25;
+const uint8_t MOT_A2_PIN = 26;
 
-/* =======================================================================
-   BLOC 3 — SCÉNARIO DE TEST (créneau 30↔65 TPS)
-   ======================================================================= */
-constexpr float SP_LOW_TPS = 30.0f;
-constexpr float SP_HIGH_TPS = 65.0f;
-constexpr uint32_t STEP_HIGH_MS = 5000; // 5 s à 65 TPS
-constexpr uint32_t STEP_PER_MS = 10000; // période 10 s (5s/5s)
+// DRV8833 - Moteur B
+const uint8_t MOT_B1_PIN = 27;
+const uint8_t MOT_B2_PIN = 14;
 
-/* =======================================================================
-   BLOC 4 — OBJETS
-   ======================================================================= */
-Motor motor(PIN_PWM, LEDC_CH, LEDC_HZ, LEDC_RES);
-Encoder enc(PIN_ENC_A, PIN_ENC_B, WHEEL_TPR);
+// Canaux PWM (LEDC) pour chaque entrée moteur
+const uint8_t MOT_A1_CH = 0;
+const uint8_t MOT_A2_CH = 1;
+const uint8_t MOT_B1_CH = 2;
+const uint8_t MOT_B2_CH = 3;
 
-/* =======================================================================
-   BLOC 5 — VARIABLES I/O PID (QuickPID)
-   ======================================================================= */
-static float g_setpoint_tps = SP_LOW_TPS; // consigne (tours/s roue)
-static float g_meas_tps = 0.0f;           // mesure
-static float g_out_pct = 0.0f;            // sortie PID -> % PWM
+// DRV8833 - SLEEP / FAULT
+const uint8_t PIN_SLEEP = 32; // HIGH = driver ON
+const uint8_t PIN_FAULT = 33; // LOW  = défaut
 
-// Gains init (point de départ sûr ; à tuner)
-static float Kp = 0.9f, Ki = 6.0f, Kd = 0.0f;
+// Encodeurs (voies A/B)
+const uint8_t ENC_A_PIN_A = 34;
+const uint8_t ENC_A_PIN_B = 35;
+const uint8_t ENC_B_PIN_A = 36;
+const uint8_t ENC_B_PIN_B = 39;
 
-// QuickPID 3.1.9 : constructeur 10-args
-QuickPID pid(&g_meas_tps, &g_out_pct, &g_setpoint_tps,
-             Kp, Ki, Kd,
-             QuickPID::pMode::pOnError,
-             QuickPID::dMode::dOnError,
-             QuickPID::iAwMode::iAwClamp,
-             QuickPID::Action::direct);
+/* ===================== PARAMS ENCODEURS / PID ===================== */
 
-/* =======================================================================
-   BLOC 6 — UTILITAIRES
-   ======================================================================= */
-void IRAM_ATTR onEncISR() { enc.handleISR(); }
+// Ticks par tour mécanique (à vérifier sur ton montage)
+const uint16_t WHEEL_TPR = 48;
 
-static inline float squareSetpoint(uint32_t nowMs)
+// Période de contrôle (vitesse + PID) en ms
+const uint32_t CONTROL_PERIOD_MS = 0; // 50 Hz
+
+// Période de log série / Teleplot
+const uint32_t LOG_PERIOD_MS = 0; // 25 Hz
+
+/* ===================== CONSIGNES ET GAINS PID ===================== */
+
+// Consignes de vitesse en tours/s (avant logique = positif)
+float setpointA_rps = 0.0f;
+float setpointB_rps = 0.0f;
+
+// Gains PID (style CircuitDigest, à ajuster)
+float Kp = 260.0f;
+float Ki = 2.7f;
+float Kd = 2000.0f;
+
+/* ===================== OBJETS GLOBAUX ===================== */
+
+// Encodeurs
+Encoder encoderA(ENC_A_PIN_A, ENC_A_PIN_B, WHEEL_TPR);
+Encoder encoderB(ENC_B_PIN_A, ENC_B_PIN_B, WHEEL_TPR);
+
+// Moteurs
+// Moteurs
+Motor motorA(MOT_A1_PIN, MOT_A2_PIN, MOT_A1_CH, MOT_A2_CH);
+Motor motorB(MOT_B1_PIN, MOT_B2_PIN, MOT_B1_CH, MOT_B2_CH);
+
+// PID de chaque motor (lib PIDController du tuto)
+PIDController pidA;
+PIDController pidB;
+
+// Mesures et commandes
+float speedA_rps = 0.0f;
+float speedB_rps = 0.0f;
+int pwmA = 0;
+int pwmB = 0;
+
+/* ===================== OUTILS DRV8833 ===================== */
+
+static void drvWake()
 {
-  const uint32_t ph = nowMs % STEP_PER_MS;
-  return (ph < STEP_HIGH_MS) ? SP_HIGH_TPS : SP_LOW_TPS;
+   digitalWrite(PIN_SLEEP, HIGH);
+   delay(1); // temps de réveil du driver
 }
 
-/* =======================================================================
-   BLOC 7 — SETUP
-   ======================================================================= */
+static void drvSleep()
+{
+   digitalWrite(PIN_SLEEP, LOW);
+}
+
+/* ===================== ROUTINES D'INTERRUPTION ENCODEURS ===================== */
+
+void IRAM_ATTR encoderA_isr()
+{
+   encoderA.handleISR();
+}
+
+void IRAM_ATTR encoderB_isr()
+{
+   encoderB.handleISR();
+}
+
+/* ===================== FONCTIONS HAUT NIVEAU DE PILOTAGE ===================== */
+
+/**
+ * Fixe directement les consignes de vitesse des 2 moteurs.
+ *   spA / spB en tours/s
+ *   > 0 = marche avant
+ *   < 0 = marche arrière
+ */
+void setMotorsRps(float spA, float spB)
+{
+   setpointA_rps = spA;
+   setpointB_rps = spB;
+}
+
+/** Marche avant avec les deux roues à la même vitesse (rps > 0). */
+void driveForward(float rps)
+{
+   setMotorsRps(rps, rps);
+}
+
+/** Marche arrière avec les deux roues. */
+void driveBackward(float rps)
+{
+   setMotorsRps(-rps, -rps);
+}
+
+/** Rotation sur place vers la gauche (A arrière, B avant). */
+void turnLeft(float rps)
+{
+   setMotorsRps(-rps, rps);
+}
+
+/** Rotation sur place vers la droite (A avant, B arrière). */
+void turnRight(float rps)
+{
+   setMotorsRps(rps, -rps);
+}
+
+/** Arrêt (consigne nulle, les moteurs passent en roue libre via la boucle). */
+void driveStop()
+{
+   setMotorsRps(0.0f, 0.0f);
+}
+
+/* ===================== SETUP ===================== */
+
 void setup()
 {
-  Serial.begin(115200);
-  delay(50);
+   Serial.begin(115200);
+   delay(100);
 
-  // PWM moteur
-  motor.begin();
-  motor.setMinPercent(8.0f); // plancher pour vaincre les frottements
+   // DRV8833 : pins de gestion globale
+   pinMode(PIN_SLEEP, OUTPUT);
+   pinMode(PIN_FAULT, INPUT_PULLUP);
+   drvWake();
 
-  // Encodeur
-  enc.begin();
-  enc.setUpdatePeriodMs(10); // estimation vitesse à 100 Hz
+   // Moteurs
+   motorA.begin();
+   motorB.begin();
 
-  // Interrupts sur A et B (fronts montants/descendants)
-  attachInterrupt(digitalPinToInterrupt(PIN_ENC_A), onEncISR, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(PIN_ENC_B), onEncISR, CHANGE);
+   // Encodeurs
+   encoderA.setUpdatePeriodMs(CONTROL_PERIOD_MS);
+   encoderB.setUpdatePeriodMs(CONTROL_PERIOD_MS);
+   encoderA.begin();
+   encoderB.begin();
 
-  // QuickPID
-  pid.SetOutputLimits(0.0f, 100.0f); // sortie en %
-  pid.SetMode(QuickPID::Control::automatic);
-  pid.SetSampleTimeUs(10000); // 10 ms
+   // Interruptions sur la voie A des encodeurs
+   attachInterrupt(digitalPinToInterrupt(ENC_A_PIN_A), encoderA_isr, CHANGE);
+   attachInterrupt(digitalPinToInterrupt(ENC_B_PIN_A), encoderB_isr, CHANGE);
 
-  Serial.println("OK: contrôle vitesse (créneau 30↔65 TPS, 5s/5s).");
-  Serial.println("Note: WHEEL_TPR = ticks/tour de ROUE (calibre-le !).");
+   // Lien moteur <-> encodeur
+   motorA.attachEncoder(&encoderA);
+   motorB.attachEncoder(&encoderB);
+
+   // Configuration des PID (comme dans le tuto CircuitDigest)
+   pidA.begin();
+   pidA.tune(Kp, Ki, Kd); // Kp, Ki, Kd globaux
+   pidA.limit(-255, 255); // sortie directement exploitable en PWM
+
+   pidB.begin();
+   pidB.tune(Kp, Ki, Kd);
+   pidB.limit(-255, 255);
+
+   // Exemple : démarre en marche avant 50 rps sur A et B
+   driveForward(50.0f);
 }
 
-/* =======================================================================
-   BLOC 8 — LOOP : Encodeur -> TPS -> PID -> PWM -> Log
-   ======================================================================= */
+/* ===================== LOOP ===================== */
+
 void loop()
 {
-  static uint32_t lastLog = 0;
-  const uint32_t now = millis();
+   static uint32_t lastControl = 0;
+   static uint32_t lastLog = 0;
 
-  // 1) Consigne (carré)
-  g_setpoint_tps = squareSetpoint(now);
+   uint32_t now = millis();
 
-  // 2) Mesure vitesse (Δticks / Δt / TPR)
-  enc.update();
-  g_meas_tps = enc.tps();
+   // 1) Boucle de régulation (vitesse + PID)
+   if (now - lastControl >= CONTROL_PERIOD_MS)
+   {
+      // Mise à jour des vitesses mesurées
+      encoderA.update();
+      encoderB.update();
 
-  // 3) PID -> sortie (%)
-  pid.Compute();
+      speedA_rps = motorA.getRps();
+      speedB_rps = motorB.getRps();
 
-  // 4) Appliquer au moteur
-  motor.setPercent(g_out_pct);
+      // Consignes
+      pidA.setpoint(setpointA_rps);
+      pidB.setpoint(setpointB_rps);
 
-  // 5) Log ~20 Hz
-  if (now - lastLog >= 50)
-  {
-    Serial.print("TPS=");
-    Serial.print(g_meas_tps, 2);
-    Serial.print("  SP=");
-    Serial.print(g_setpoint_tps, 1);
-    Serial.print("  Out(%)=");
-    Serial.println(g_out_pct, 1);
-    lastLog = now;
-  }
+      // Calcul des PWM signés
+      pwmA = pidA.compute(speedA_rps);
+      pwmB = pidB.compute(speedB_rps);
+
+      // Application aux moteurs
+      if (setpointA_rps == 0.0f)
+      {
+         motorA.stop();
+         pwmA = 0;
+      }
+      else
+      {
+         motorA.setPwm(pwmA);
+      }
+
+      if (setpointB_rps == 0.0f)
+      {
+         motorB.stop();
+         pwmB = 0;
+      }
+      else
+      {
+         motorB.setPwm(pwmB);
+      }
+
+      lastControl = now;
+   }
+
+   // 2) Logs série / Teleplot
+   if (now - lastLog >= LOG_PERIOD_MS)
+   {
+      // Log lisible pour debug rapide
+      Serial.print(F("A: SP="));
+      Serial.print(setpointA_rps, 2);
+      Serial.print(F(" rps, Meas="));
+      Serial.print(speedA_rps, 2);
+      Serial.print(F(", PWM="));
+      Serial.print(pwmA);
+
+      Serial.print(F(" | B: SP="));
+      Serial.print(setpointB_rps, 2);
+      Serial.print(F(" rps, Meas="));
+      Serial.print(speedB_rps, 2);
+      Serial.print(F(", PWM="));
+      Serial.println(pwmB);
+
+      // Trames Teleplot (si tu veux visualiser plus proprement)
+      Serial.print(F(">A_SP:"));
+      Serial.println(setpointA_rps);
+      Serial.print(F(">A_MEAS:"));
+      Serial.println(speedA_rps);
+      Serial.print(F(">A_PWM:"));
+      Serial.println(pwmA);
+
+      Serial.print(F(">B_SP:"));
+      Serial.println(setpointB_rps);
+      Serial.print(F(">B_MEAS:"));
+      Serial.println(speedB_rps);
+      Serial.print(F(">B_PWM:"));
+      Serial.println(pwmB);
+
+      lastLog = now;
+   }
+
+   // loop() volontairement très simple.
 }

@@ -1,51 +1,65 @@
 #pragma once
 #include <Arduino.h>
 
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
+
 /**
- * Encodeur quadrature (ESP32) — comptage + estimation TPS (tours/s roue).
- * A/B : entrées uniquement (ex: GPIO34/35). Pas de pullups internes ici.
- * Fenêtre d'estimation : Δticks / Δt / TPR.
+ * Encodeur quadrature A/B pour moteur N20.
+ *
+ * Convention :
+ *   - on déclenche l'ISR sur la voie A (CHANGE)
+ *   - on lit la voie B pour connaître le sens
+ *   - le câblage physique doit être fait pour que
+ *     "marche avant" => ticks qui augmentent (rps > 0).
+ *
+ * Fournit :
+ *   - un compteur de ticks global
+ *   - une vitesse instantanée en tours/s (rps)
  */
 class Encoder
 {
 public:
-  Encoder(uint8_t pinA, uint8_t pinB, uint16_t ticksPerRev = 48) noexcept;
+  // ticksPerRev = nombre de ticks par tour mécanique (à mesurer / vérifier)
+  Encoder(uint8_t pinA, uint8_t pinB,
+          uint16_t ticksPerRev);
 
-  void begin() noexcept;               // à appeler dans setup()
-  void IRAM_ATTR handleISR() noexcept; // ISR unique pour A et B (CHANGE)
-  void update() noexcept;              // calcule _tps si période écoulée
-  void reset() noexcept;
+  // À appeler dans setup()
+  void begin();
 
-  // lecture
-  inline long ticks() const noexcept { return _ticks; } // signé
-  inline float tps() const noexcept { return _tps; }    // tours/s (roue)
-  inline uint16_t tpr() const noexcept { return _tpr; } // ticks / tour (roue)
+  // À appeler depuis l'ISR attachInterrupt (sur la voie A)
+  void IRAM_ATTR handleISR();
 
-  // réglages
-  void setTicksPerRev(uint16_t tpr) noexcept;
-  void setUpdatePeriodMs(uint32_t ms) noexcept;
+  // À appeler régulièrement dans loop()
+  // (période définie par setUpdatePeriodMs())
+  void update();
+
+  // Accès au compteur brut de ticks
+  long getTicks() const { return _ticks; }
+
+  void resetTicks();
+
+  // Vitesse en tours/s (instantanée, non filtrée)
+  float getRps() const { return _rps; }
+
+  // Période cible de mise à jour de la vitesse (en ms)
+  void setUpdatePeriodMs(uint32_t periodMs);
 
 private:
-  const uint8_t _pinA, _pinB;
+  uint8_t _pinA;
+  uint8_t _pinB;
+  uint16_t _tpr;        // ticks par tour
+  volatile long _ticks; // compteur global de ticks (modifié en ISR)
 
-  volatile long _ticks = 0;
-  volatile uint8_t _lastAB = 0; // (A<<1)|B dernier
+  uint32_t _prevUpdateMs; // dernier appel à update()
+  long _prevTicks;
+  uint32_t _periodMs; // période cible (ms)
+  float _rps;         // vitesse en tours/s
 
-  uint16_t _tpr = 48; // ticks par tour de roue (à calibrer)
-  float _invTPR = 1.0f / 48.0f;
-
-  uint32_t _prevMs = 0;
-  long _prevTicks = 0;
-  uint32_t _updatePeriodMs = 10;
-
-  float _tps = 0.0f;
-
-  inline uint8_t readAB() const noexcept
+  inline void readAB(uint8_t &a, uint8_t &b) const
   {
-    // Pins input-only (34/35) OK | pas de pull-ups internes
-    const uint8_t a = digitalRead(_pinA);
-    const uint8_t b = digitalRead(_pinB);
-    return (uint8_t)((a << 1) | b);
+    a = (uint8_t)digitalRead(_pinA);
+    b = (uint8_t)digitalRead(_pinB);
   }
-  static inline int8_t quadDiff(uint8_t packed) noexcept;
 };
