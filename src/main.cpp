@@ -1,18 +1,27 @@
 #include <Arduino.h>
-
-// put function declarations here:
-int myFunction(int, int);
+#include "ultrason.hpp"
 
 void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+  Serial.begin(9600); // Starts the serial communication
+  setPinsTrigEcho();
+
+  qh = xQueueCreate(8,sizeof(float));
+
+  xTaskCreatePinnedToCore(
+    ultrasonTask,   // Display task
+    "ultrasonTask", // Task name
+    2048,       // Stack size
+    NULL,       // No parameters
+    1,          // Priority
+    NULL,       // No handle returned
+    0);         // CPU 0
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-}
-
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+  float distance = 0;
+  if (xQueueReceive(qh, &distance, portMAX_DELAY))
+  {
+     Serial.print("Distance (cm): ");
+     Serial.println(distance);
+  }
 }
